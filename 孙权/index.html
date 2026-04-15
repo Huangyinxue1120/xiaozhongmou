@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>甜味江东：仲谋的现代观察日记</title>
+    <style>
+        :root {
+            --pink-main: #ffb6c1;
+            --pink-light: #fff0f5;
+            --pink-dark: #ff69b4;
+            --glass: rgba(255, 255, 255, 0.85); 
+        }
+
+        body {
+            margin: 0; background: #222;
+            color: #555; font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+            height: 100vh; display: flex; justify-content: center; align-items: center; overflow: hidden;
+        }
+
+        #game-stage {
+            width: 390px; height: 100vh; max-height: 844px;
+            background: #fff;
+            position: relative; display: flex; flex-direction: column;
+            box-shadow: 0 10px 50px rgba(0,0,0,0.3); border-radius: 20px; overflow: hidden;
+        }
+
+        .ui-header { 
+            padding: 15px 20px; background: var(--glass); z-index: 100;
+            border-bottom: 2px dashed var(--pink-main); flex-shrink: 0;
+            backdrop-filter: blur(5px);
+        }
+        .stats-row { display: flex; justify-content: space-between; font-weight: bold; color: var(--pink-dark); margin-bottom: 5px; font-size: 12px; }
+        .bar-wrap { height: 6px; background: #eee; border-radius: 3px; overflow: hidden; }
+        .bar-inner { height: 100%; transition: width 0.8s ease; background: var(--pink-dark); }
+
+        #scene-display { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 5; overflow: hidden; background: #eee;
+        }
+
+        #character-sprite {
+            width: 100%; height: 100%; object-fit: cover; object-position: center 20%;
+            animation: live2d-breath 4s ease-in-out infinite;
+            filter: drop-shadow(0 0 20px rgba(0,0,0,0.2));
+            transition: filter 0.8s, opacity 0.5s;
+        }
+
+        @keyframes live2d-breath {
+            0%, 100% { transform: scale(1) translateY(0); }
+            50% { transform: scale(1.02) translateY(-10px); }
+        }
+
+        #option-layer {
+            display: none; position: absolute; bottom: 220px; left: 0; width: 100%;
+            z-index: 200; flex-direction: column; align-items: center; padding: 0 40px; box-sizing: border-box;
+        }
+        .opt-btn {
+            width: 100%; padding: 14px; background: rgba(255, 255, 255, 0.95);
+            border: 2px solid var(--pink-main); color: var(--pink-dark);
+            margin-bottom: 12px; border-radius: 25px; cursor: pointer;
+            text-align: center; font-weight: bold; font-size: 14px;
+            box-shadow: 0 4px 15px rgba(255,182,193,0.3); transition: 0.2s;
+            backdrop-filter: blur(2px);
+        }
+        .opt-btn:hover { background: var(--pink-main); color: white; transform: translateY(-3px); }
+
+        #dialogue-area {
+            height: 200px; background: var(--glass); padding: 25px;
+            box-sizing: border-box; position: relative; cursor: pointer;
+            border-top: 3px solid var(--pink-main); z-index: 150;
+            flex-shrink: 0; margin-top: auto; backdrop-filter: blur(5px);
+        }
+        #char-name { background: var(--pink-dark); color: white; padding: 4px 15px; border-radius: 12px; font-size: 15px; display: inline-block; margin-bottom: 10px; }
+        #text-wrap { height: 85px; overflow-y: auto; }
+        #text-content { line-height: 1.7; font-size: 15px; color: #444; }
+
+        .diary-modal { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.85); z-index: 300; padding: 40px 25px; }
+        .diary-paper {
+            background: #fffafa; padding: 30px; border-radius: 15px; height: 55%;
+            font-family: "Kaiti", "STKaiti", serif; line-height: 1.8; border: 6px double var(--pink-main);
+            overflow-y: auto; color: #333; font-size: 17px;
+        }
+
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-thumb { background: var(--pink-main); border-radius: 10px; }
+    </style>
+</head>
+<body>
+
+<div id="game-stage">
+    <audio id="bgm" loop preload="auto"></audio>
+    <audio id="se-warn" preload="auto"></audio>
+    <div id="click-pool"></div>
+
+    <div class="ui-header">
+        <div class="stats-row">
+            <span>💖 昭明 (Bond): <span id="val-z">0</span></span>
+            <span>✨ 偿还 (Debt): <span id="val-c">0</span></span>
+        </div>
+        <div class="bar-wrap"><div id="bar-z" class="bar-inner" style="width:0%"></div></div>
+        <div class="bar-wrap"><div id="bar-c" class="bar-inner" style="width:0%; background: #999;"></div></div>
+        <div id="ui-day" style="font-size: 11px; color: var(--pink-dark); margin-top:5px;">初始化中...</div>
+    </div>
+
+    <div id="scene-display">
+        <img id="character-sprite" src="sunquan_normal.png" alt="孙权立绘">
+    </div>
+
+    <div id="option-container" style="position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:200;">
+        <div id="option-layer" style="pointer-events:auto;"></div>
+    </div>
+
+    <div id="dialogue-area" onclick="game.next()">
+        <div id="char-name">孙仲谋</div>
+        <div id="text-wrap">
+            <div id="text-content">点击开启甜蜜物语...</div>
+        </div>
+        <div style="text-align:right; font-size:10px; color:var(--pink-dark); margin-top:5px; opacity:0.6;">NEXT ▼</div>
+    </div>
+
+    <div id="diary-layer" class="diary-modal">
+        <div style="color:#ff6b6b; text-align:center; font-size:18px; margin-bottom:15px; font-weight:bold;">
+            他在翻身... 惊醒倒计时: <span id="countdown">8</span>s
+        </div>
+        <div class="diary-paper" id="diary-body"></div>
+        <button class="opt-btn" style="margin-top:25px; background:var(--pink-main); color:white;" onclick="game.closeDiary(true)">【悄悄合上日记】</button>
+    </div>
+</div>
+
+<script>
+    const game = {
+        z: 0, c: 0, day: 1, idx: 0, 
+        script: [], status: 'awake',
+        canClick: true, timer: null,
+        audioInitialized: false,
+        clickAudioIndex: 0,
+        clickPoolSize: 5, // 点击音效池大小
+
+        images: {
+            normal: "sunquan_normal.png",
+            sleep: "sunquan_sleep.png",
+            market: "sunquan_supermarket.png"
+        },
+
+        audioFiles: {
+            bgm: "bgm.mp3",
+            click: "click.mp3",
+            warn: "warning.mp3"
+        },
+
+        db: {
+            1: {
+                intro: [
+                    { t: "孙仲谋看着你刚组装好的“粉色电竞椅”，陷入了长久的沉默。" },
+                    { n: "孙仲谋", t: "广陵王，此座为何生有双翼？色泽如此……娇艳。莫非是给后宫女眷准备的？" },
+                    { n: "广陵王", t: "这是给你坐的，坐上去很舒服，还能躺着睡觉。" },
+                    { n: "孙仲谋", t: "（他犹疑地坐下，椅背微微弹动）……唔。这触感，竟比江东的软榻还要扎实几分。你，当真要让我坐这个？", o: [
+                        { l: "“因为仲谋值得最好的。”", f: () => game.handleChoice('d1_sweet') },
+                        { l: "“坐了我的椅子，以后要帮我推塔。”", f: () => game.handleChoice('d1_work') }
+                    ]}
+                ],
+                outcomes: {
+                    d1_sweet: [
+                        { n: "孙仲谋", t: "（他的耳根瞬间染上了一抹薄红）……花言巧语。广陵王，你的嘴是抹了蜜吗？" },
+                        { n: "孙仲谋", t: "……既然你这么诚心，我便勉强收下了。过来，教我这椅子如何调整。" },
+                        { f: () => { game.z += 15; game.goNight("【第一日】她送了我一把粉色的座榻。虽然颜色滑稽，但坐上去时，仿佛被她周身的气息包裹……这种感觉，竟让我心跳快得不合常理。") } }
+                    ],
+                    d1_work: [
+                        { n: "孙仲谋", t: "（他冷笑一声，抱着双臂斜睨着你）呵，我就知道，你这广陵王从不吃亏。" },
+                        { n: "孙仲谋", t: "成交。只要你能指挥得动我，江东之主的刀，自然为你所用。" },
+                        { f: () => { game.c += 15; game.goNight("【第一日】今日达成了一项‘推塔’的契约。她总是有办法让我为她效力。不过，看着她在那发光板子前专注的样子，帮她赢一次，倒也无妨。") } }
+                    ]
+                }
+            },
+            2: {
+                intro: [
+                    { t: "你带着孙权去超市，他看着琳琅满目的货架，被某种名为“辣条”的东西吸引了注意。" },
+                    { n: "孙仲谋", t: "广陵王，这红彤彤的长条物，为何散发着如此……霸道的气息？" },
+                    { n: "广陵王", t: "那是辣条，味道很重，但我猜你可能会喜欢。" },
+                    { n: "孙仲谋", t: "（他尝试撕开包装）我南征北战，什么场面没见过？区区零食……", o: [
+                        { l: "替他擦掉沾在嘴角上的油渍", f: () => game.handleChoice('d2_sweet') },
+                        { l: "骗他说这种零食其实很贵", f: () => game.handleChoice('d2_work') }
+                    ]}
+                ],
+                outcomes: {
+                    d2_sweet: [
+                        { t: "你指尖的温热触碰到他的嘴角，孙权的动作猛然僵住了。" },
+                        { n: "孙仲谋", t: "（他琥珀色的瞳孔微微一颤）……我、我自己会擦。你越发不知礼数了！" },
+                        { f: () => { game.z += 20; game.goNight("【第二日】今日吃了一种叫辣条的辛辣之物。但更辣的……似乎是她指尖划过我嘴角的触感。") } }
+                    ],
+                    d2_work: [
+                        { n: "孙仲谋", t: "（他挑了挑眉）这么点东西，竟要扣除我三日的赎金？" },
+                        { n: "孙仲谋", t: "罢了，为了这滋味，我便多替你打扫几日客厅。反正……那铁乌龟最近也不太听话。" },
+                        { f: () => { game.c += 20; game.goNight("【第二日】她今日又在赎金上坑了我一把。不过这辣条的味道确实上瘾。") } }
+                    ]
+                }
+            },
+            'crisis': {
+                caught: [
+                    { n: "孙仲谋", t: "（他猛地睁开眼）广陵王，我在睡觉，你却在窃取我的心声？" },
+                    { o: [
+                        { l: "“我只是想看你有没有骂我。”", f: () => game.handleChoice('crisis_fix') },
+                        { l: "低头认错，任由他处置。", f: () => game.handleChoice('crisis_bad') }
+                    ]}
+                ],
+                outcomes: {
+                    crisis_fix: [{ n: "孙仲谋", t: "这次便饶了你。若有下次，我便将这日记塞进音箱播放！", f: () => { game.z += 5; game.nextDay(); } }],
+                    crisis_bad: [{ n: "孙仲谋", t: "既然不信任，又何必留我。这本日记，我收走了。", f: () => { game.z -= 15; game.nextDay(); } }]
+                }
+            }
+        },
+
+        init() {
+            // 初始化主音频
+            document.getElementById('bgm').src = this.audioFiles.bgm;
+            document.getElementById('se-warn').src = this.audioFiles.warn;
+            
+            // 创建点击音效池，解决延迟和丢失问题
+            const pool = document.getElementById('click-pool');
+            for(let i=0; i<this.clickPoolSize; i++) {
+                const aud = document.createElement('audio');
+                aud.src = this.audioFiles.click;
+                aud.preload = "auto";
+                pool.appendChild(aud);
+            }
+
+            this.loadScript(this.db[1].intro); 
+        },
+
+        initAudio() {
+            if (this.audioInitialized) return;
+            const bgm = document.getElementById('bgm');
+            bgm.play().catch(() => {});
+            bgm.volume = 0.3;
+            this.audioInitialized = true;
+        },
+
+        playClickSE() {
+            const pool = document.getElementById('click-pool').children;
+            const current = pool[this.clickAudioIndex];
+            current.currentTime = 0; // 强制重置到开头
+            current.play().catch(()=>{});
+            
+            // 轮换到下一个音频实例
+            this.clickAudioIndex = (this.clickAudioIndex + 1) % this.clickPoolSize;
+        },
+
+        loadScript(s) {
+            this.script = s;
+            this.idx = 0;
+            this.show();
+        },
+
+        show() {
+            const current = this.script[this.idx];
+            document.getElementById('char-name').innerText = current.n || "系统";
+            document.getElementById('text-content').innerText = current.t;
+            document.getElementById('option-layer').style.display = current.o ? 'flex' : 'none';
+            this.canClick = !current.o;
+            if (current.o) this.renderOptions(current.o);
+            if (current.f) current.f();
+            this.updateUI();
+        },
+
+        next() {
+            this.initAudio();
+            if (!this.canClick) return;
+            
+            // 播放优化后的点击音效
+            this.playClickSE();
+            
+            if (this.idx < this.script.length - 1) { this.idx++; this.show(); }
+        },
+
+        handleChoice(key) {
+            this.playClickSE(); // 选项点击也要响
+            let scene;
+            if (key.startsWith('d1')) scene = this.db[1].outcomes[key];
+            else if (key.startsWith('d2')) scene = this.db[2].outcomes[key];
+            else scene = this.db.crisis.outcomes[key];
+            this.loadScript(scene);
+        },
+
+        renderOptions(opts) {
+            const layer = document.getElementById('option-layer');
+            layer.innerHTML = '';
+            opts.forEach(opt => {
+                const btn = document.createElement('div');
+                btn.className = 'opt-btn';
+                btn.innerText = opt.l;
+                btn.onclick = (e) => { e.stopPropagation(); opt.f(); };
+                layer.appendChild(btn);
+            });
+        },
+
+        goNight(diaryText) {
+            this.status = 'sleeping';
+            this.currentDiary = diaryText;
+            this.loadScript([
+                { t: "夜深了。仲谋在你的粉色电竞椅上睡着了，日记本就滑落在他手边。" },
+                { o: [
+                    { l: "【冒险】偷看日记内容", f: () => game.startDiaryChallenge() },
+                    { l: "【心安】为他披上一条毯子", f: () => { game.c+=10; game.nextDay(); } }
+                ]}
+            ]);
+        },
+
+        startDiaryChallenge() {
+            document.getElementById('diary-layer').style.display = 'block';
+            document.getElementById('diary-body').innerText = this.currentDiary;
+            const warn = document.getElementById('se-warn');
+            warn.currentTime = 0;
+            warn.play().catch(()=>{});
+            let time = 8;
+            document.getElementById('countdown').innerText = time;
+            this.timer = setInterval(() => {
+                time--;
+                document.getElementById('countdown').innerText = time;
+                if (time <= 0) { clearInterval(this.timer); game.closeDiary(false); }
+            }, 1000);
+        },
+
+        closeDiary(safe) {
+            clearInterval(this.timer);
+            const warn = document.getElementById('se-warn');
+            warn.pause();
+            document.getElementById('diary-layer').style.display = 'none';
+            if (safe) {
+                this.z += 10;
+                this.loadScript([{ t: "呼……趁他没醒合上了。他的睡颜倒是比平时乖多了。", f: () => { setTimeout(()=>game.nextDay(), 1500) } }]);
+            } else {
+                this.loadScript(this.db.crisis.caught);
+            }
+        },
+
+        nextDay() {
+            this.day++;
+            if (this.day > 2) {
+                this.status = 'awake'; 
+                this.loadScript([
+                    { n: "孙仲谋", t: "（他站在时空裂缝前，已经换回了你初见他时的神态，目光清亮）" },
+                    { n: "孙仲谋", t: "广陵王，我的债，还得差不多了。你要我归还自由，还是归还余生？", o: [
+                        { l: "“归还余生，留下来。”", f: () => game.ending('stay') },
+                        { l: "“归还自由，你属于天下。”", f: () => game.ending('leave') }
+                    ]}
+                ]);
+                return;
+            }
+            this.status = 'awake';
+            this.loadScript(this.db[this.day].intro);
+        },
+
+        updateUI() {
+            document.getElementById('val-z').innerText = this.z;
+            document.getElementById('val-c').innerText = this.c;
+            document.getElementById('bar-z').style.width = Math.min(this.z, 100) + '%';
+            document.getElementById('bar-c').style.width = Math.min(this.c, 100) + '%';
+            document.getElementById('ui-day').innerText = `第 ${this.day} 天 · 现代客厅`;
+            
+            const sprite = document.getElementById('character-sprite');
+            let targetImg = this.images.normal;
+            
+            if (this.day > 2) {
+                targetImg = this.images.normal;
+                sprite.style.filter = 'brightness(1)';
+            } else if (this.status === 'sleeping') {
+                targetImg = this.images.sleep;
+                sprite.style.filter = 'brightness(0.6) sepia(0.1)';
+            } else if (this.day === 2 && this.status === 'awake') {
+                targetImg = this.images.market;
+                sprite.style.filter = 'brightness(1)';
+            } else {
+                targetImg = this.images.normal;
+                sprite.style.filter = 'brightness(1)';
+            }
+
+            if (!sprite.src.includes(targetImg)) {
+                sprite.style.opacity = 0;
+                setTimeout(() => {
+                    sprite.src = targetImg;
+                    sprite.style.opacity = 1;
+                }, 300);
+            }
+        },
+
+        ending(type) {
+            const txt = type === 'stay' ? "“既然你这般求我，那我就勉强留下来好了。”他握住你的手，掌心滚烫。" : "“广陵王，这几日的梦，我记下了。若有缘，在你的那个时代再见。”";
+            this.loadScript([{ n: "孙仲谋", t: txt }, { t: "—— 终 ——", f: () => { setTimeout(()=>location.reload(), 6000); } }]);
+        }
+    };
+
+    window.onload = () => game.init();
+</script>
+</body>
+</html>
